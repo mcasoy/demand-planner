@@ -1,0 +1,25 @@
+# Dependencies
+/node_modules
+
+# Vite
+.env
+.env.*
+dist
+dist-ssr
+*.local
+
+# Firebase
+firebase-debug.log
+.firebase/
+
+# IDE / Editor specific
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# macOS
+.DS_Store

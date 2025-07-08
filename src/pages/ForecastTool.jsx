@@ -7,6 +7,7 @@ import { useForecastCalculations } from '../hooks/useForecastCalculations';
 
 import GoogleSheetsManagerForecast from '../components/GoogleSheetsManagerForecast';
 import FilterControlsForecast from '../components/FilterControlsForecast';
+import SkuTableForecast from '../components/SkuTableForecast'; // Asegúrate de que SkuTableForecast sea importado
 import { IconSearch, IconTrash2, IconShieldQuestion } from '../assets/Icons';
 
 const ForecastTool = () => {
@@ -42,13 +43,19 @@ const ForecastTool = () => {
     const augmentedSkus = useForecastCalculations(skus, monthDetails);
 
     const filterOptions = useMemo(() => {
+        // Esta guardia protege contra el caso de que skus no sea un array
+        if (!Array.isArray(skus)) return { categories: [], brands: [], owners: [] };
+        
         const categories = new Set();
         const brands = new Set();
         const owners = new Set();
+        
         skus.forEach(sku => {
-            if (sku.category) categories.add(sku.category);
-            if (sku.brand) brands.add(sku.brand);
-            if (sku.owner) owners.add(sku.owner);
+            if (sku) { // Comprobación extra por si acaso
+                if (sku.category) categories.add(sku.category);
+                if (sku.brand) brands.add(sku.brand);
+                if (sku.owner) owners.add(sku.owner);
+            }
         });
         return { 
             categories: [...categories].sort(), 
@@ -58,23 +65,31 @@ const ForecastTool = () => {
     }, [skus]);
 
     const filteredAndSortedSkus = useMemo(() => {
-        const filtered = (augmentedSkus || []).filter(Boolean).filter(sku => {
+        if (!Array.isArray(augmentedSkus)) {
+            return [];
+        }
+
+        const filtered = augmentedSkus.filter(sku => {
+            // --- LA CORRECCIÓN CLAVE ESTÁ AQUÍ ---
+            // Si el sku es null o undefined, lo descartamos inmediatamente.
+            if (!sku) return false;
+
             const categoryMatch = filters.category.length === 0 || filters.category.includes(sku.category);
             const brandMatch = filters.brand.length === 0 || filters.brand.includes(sku.brand);
             const buyerMatch = filters.owner.length === 0 || filters.owner.includes(sku.owner);
             const oosMatch = !filters.oosOnly || (sku.projections || []).some(p => p.count < p.daysInMonth);
             const searchMatch = (sku.id?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (sku.sku_name?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+            
             return categoryMatch && brandMatch && buyerMatch && oosMatch && searchMatch;
         });
 
-        filtered.sort((a, b) => {
+        return [...filtered].sort((a, b) => {
             const valA = a[sortConfig.key] ?? -Infinity;
             const valB = b[sortConfig.key] ?? -Infinity;
             if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
             if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
             return 0;
         });
-        return filtered;
     }, [augmentedSkus, searchTerm, sortConfig, filters]);
 
     const displayData = useMemo(() => {
@@ -106,9 +121,12 @@ const ForecastTool = () => {
         setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
     }, []);
 
-    const requestSort = (key) => {
-        setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'ascending' ? 'descending' : 'ascending' }));
-    };
+    const requestSort = useCallback((key) => {
+        setSortConfig(prev => ({ 
+            key, 
+            direction: prev.key === key && prev.direction === 'ascending' ? 'descending' : 'ascending' 
+        }));
+    }, []);
 
     const handleDeleteAll = async () => {
         if (!confirmDelete) {
@@ -141,6 +159,7 @@ const ForecastTool = () => {
                     <h1 className="text-4xl font-bold text-slate-900">Forecast Tool</h1>
                     <p className="text-slate-600 mt-2">Conecta tu Google Sheet para visualizar proyecciones.</p>
                 </header>
+                
                 {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded" role="alert"><p>{error}</p></div>}
                 
                 <GoogleSheetsManagerForecast db={db} setError={setError} setIsProcessing={setIsProcessing} isProcessing={isProcessing} forceRefresh={() => setDataVersion(v => v + 1)} />
@@ -171,33 +190,23 @@ const ForecastTool = () => {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto bg-white rounded-xl shadow-lg">
-                    <table className="w-full text-sm text-left text-slate-600">
-                        <thead className="text-xs text-slate-700 uppercase bg-slate-50">
-                            {groupBy === 'sku' ? (
-                                <tr>
-                                    <th scope="col" className="px-4 py-3 cursor-pointer hover:bg-slate-200" onClick={() => requestSort('id')}>SKU</th>
-                                    <th scope="col" className="px-4 py-3">Nombre</th>
-                                    <th scope="col" className="px-4 py-3">Marca</th>
-                                    <th scope="col" className="px-4 py-3">Owner</th>
-                                    <th scope="col" className="px-4 py-3">Categoría</th>
-                                    <th scope="col" className="px-4 py-3 cursor-pointer hover:bg-slate-200" onClick={() => requestSort('objetivo_mensual_gmv')}>Obj. GMV</th>
-                                    <th scope="col" className="px-4 py-3 cursor-pointer hover:bg-slate-200" onClick={() => requestSort('stock_actual')}>Stock Actual</th>
-                                    <th scope="col" className="px-4 py-3 cursor-pointer hover:bg-slate-200" onClick={() => requestSort('dias_stock_hoy')}>Días Stock Hoy</th>
-                                    {monthDetails.map((detail, i) => (<th key={i} scope="col" className="px-4 py-3">{`Días Stock ${detail.monthName}`}</th>))}
-                                </tr>
-                            ) : (
+                {isLoading ? (
+                    <div className="text-center py-10"><p>Cargando datos...</p></div>
+                ) : groupBy === 'sku' ? (
+                    <SkuTableForecast skus={displayData} sortConfig={sortConfig} requestSort={requestSort} monthDetails={monthDetails} />
+                ) : (
+                    <div className="overflow-x-auto bg-white rounded-xl shadow-lg">
+                        <table className="w-full text-sm text-left text-slate-600">
+                            <thead className="text-xs text-slate-700 uppercase bg-slate-50">
                                 <tr>
                                     <th className="px-4 py-3">{ {brand: 'Marca', category: 'Categoría', owner: 'Owner'}[groupBy] }</th>
                                     <th className="px-4 py-3 text-right">Obj. GMV Total</th>
                                     <th className="px-4 py-3 text-right">Stock Actual Total</th>
                                     <th className="px-4 py-3 text-right"># SKUs</th>
                                 </tr>
-                            )}
-                        </thead>
-                        <tbody>
-                            {displayData.map(item => (
-                                item.isGroup ? (
+                            </thead>
+                            <tbody>
+                                {displayData.map(item => (
                                     <React.Fragment key={item.id}>
                                         <tr className="bg-slate-100 border-b hover:bg-slate-200 cursor-pointer" onClick={() => toggleGroup(item.groupName)}>
                                             <td className="px-4 py-3 font-bold text-slate-800 flex items-center gap-2">
@@ -217,31 +226,11 @@ const ForecastTool = () => {
                                             </tr>
                                         ))}
                                     </React.Fragment>
-                                ) : (
-                                    <tr key={item.id} className="bg-white border-b hover:bg-slate-50">
-                                        <td className="px-4 py-3 font-medium text-slate-900">{item.id}</td>
-                                        <td className="px-4 py-3">{item.sku_name}</td>
-                                        <td className="px-4 py-3">{item.brand}</td>
-                                        <td className="px-4 py-3">{item.owner}</td>
-                                        <td className="px-4 py-3">{item.category}</td>
-                                        <td className="px-4 py-3">{formatCurrency(item.objetivo_mensual_gmv)}</td>
-                                        <td className="px-4 py-3 font-semibold">{item.stock_actual}</td>
-                                        <td className="px-4 py-3 font-bold">
-                                            <span className={`px-2 py-1 rounded-full text-xs ${item.dias_stock_hoy < 15 ? 'text-red-600 bg-red-100' : item.dias_stock_hoy < 30 ? 'text-amber-600 bg-amber-100' : 'text-green-600 bg-green-100'}`}>
-                                                {isFinite(item.dias_stock_hoy) ? item.dias_stock_hoy.toFixed(0) : '∞'}
-                                            </span>
-                                        </td>
-                                        {(item.projections || []).map((proj, i) => { 
-                                            const percentageInStock = proj.daysInMonth > 0 ? (proj.count / proj.daysInMonth) * 100 : 100;
-                                            const riskColor = percentageInStock < 50 ? 'text-red-500' : percentageInStock < 85 ? 'text-amber-600' : 'text-green-600';
-                                            return <td key={i} className={`px-4 py-3 font-bold ${riskColor}`}>{`${proj.count}/${proj.daysInMonth}`}</td>
-                                        })}
-                                    </tr>
-                                )
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
         </div>
     );

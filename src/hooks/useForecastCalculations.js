@@ -24,11 +24,11 @@ export const useForecastCalculations = (skus, monthDetails) => {
 
                 const purchaseOrders = Array.isArray(sku.purchase_orders) ? sku.purchase_orders : [];
                 const transitsByDay = purchaseOrders.reduce((acc, po) => {
-                    if (po.date_of_arrival) {
-                        const etaDate = parseISO(po.date_of_arrival + "T12:00:00Z");
+                    // 1. Nos aseguramos que la fecha sea un string válido antes de procesar
+                    if (po && typeof po.date_of_arrival === 'string' && po.date_of_arrival) {
+                        const etaDate = parseISO(po.date_of_arrival);
                         
-                        // --- LA CORRECCIÓN FINAL ESTÁ AQUÍ ---
-                        // Antes de usar 'isAfter', comprobamos si la fecha es válida.
+                        // 2. Comprobamos que la fecha parseada sea válida Y futura
                         if (isValid(etaDate) && isAfter(etaDate, today)) {
                             const key = `${etaDate.getUTCFullYear()}-${etaDate.getUTCMonth()}-${etaDate.getUTCDate()}`;
                             acc[key] = (acc[key] || 0) + cleanNumber(po.quantity);

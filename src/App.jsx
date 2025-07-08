@@ -11,6 +11,7 @@ import ForecastTool from './pages/ForecastTool';
 import PurchaseOrderTool from './pages/PurchaseOrderTool';
 import PlaceholderTool from './components/PlaceholderTool';
 
+
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) {
